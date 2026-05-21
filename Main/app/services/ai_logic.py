@@ -58,7 +58,9 @@ def _build_error(stage: str, message: str, *, status_code: int = 500, **extra) -
         "stage": stage,
         "message": message,
     }
-    error.update({key: value for key, value in extra.items() if value not in (None, "", [], {})})
+    error.update(
+        {key: value for key, value in extra.items() if value not in (None, "", [], {})}
+    )
     return {"error": error, "status_code": status_code}
 
 
@@ -168,7 +170,11 @@ def _build_prompt_fallback(parsed: dict, user_text: str) -> str:
 
 def _get_forge_timeout() -> httpx.Timeout:
     read_timeout_raw = FORGE_READ_TIMEOUT_RAW.strip().lower()
-    read_timeout = None if read_timeout_raw in {"none", "0", "false", "off"} else float(FORGE_READ_TIMEOUT_RAW)
+    read_timeout = (
+        None
+        if read_timeout_raw in {"none", "0", "false", "off"}
+        else float(FORGE_READ_TIMEOUT_RAW)
+    )
 
     return httpx.Timeout(
         connect=FORGE_CONNECT_TIMEOUT,
@@ -180,7 +186,11 @@ def _get_forge_timeout() -> httpx.Timeout:
 
 def _get_llm_timeout() -> httpx.Timeout:
     read_timeout_raw = LLM_READ_TIMEOUT_RAW.strip().lower()
-    read_timeout = None if read_timeout_raw in {"none", "0", "false", "off"} else float(LLM_READ_TIMEOUT_RAW)
+    read_timeout = (
+        None
+        if read_timeout_raw in {"none", "0", "false", "off"}
+        else float(LLM_READ_TIMEOUT_RAW)
+    )
 
     return httpx.Timeout(
         connect=LLM_CONNECT_TIMEOUT,
@@ -193,16 +203,21 @@ def _get_llm_timeout() -> httpx.Timeout:
 async def get_prompt_from_llm(user_text: str) -> dict:
     schema_hint = json.dumps(LLM_RESPONSE_SCHEMA, ensure_ascii=False)
     system_instruction = (
-        "You are an expert prompt engineer for the Illustrious SDXL model. "
-        "Convert the user's description into a comma-separated list of Danbooru-style tags. "
-        "Output ONLY a valid JSON object. Use double quotes for keys and values. "
-        "The JSON object must contain: "
-        "\"prompt\" (non-empty string with comma-separated tags), "
-        "\"negative_prompt\" (string), "
-        "\"steps\" (integer), "
-        "\"cfg_scale\" (number), "
-        "\"sampler_name\" (string). "
-        "Never return an empty object like {}. If unsure, still produce a best-effort non-empty prompt. "
+        "You are an expert prompt engineer for the Illustrious SDXL anime model. "
+        "Your task is to translate user descriptions into a rich, comma-separated list of Danbooru-style tags. "
+        "RULES: "
+        "1. NEVER use full sentences. Break everything down into single words or short phrases. "
+        "2. Always start the prompt with quality tags: 'masterpiece, best quality, ultra-detailed, highres'. "
+        "3. Add lighting, environment, and camera angle tags to make the prompt voluminous. "
+        "4. Output ONLY a valid JSON object with double quotes. "
+        "EXAMPLE OUTPUT:\n"
+        "{\n"
+        '  "prompt": "masterpiece, best quality, 1girl, solo, cyberpunk city, high-rise buildings, neon lights, raining, wet streets, night, outdoors, glowing, cinematic lighting, realism, highly detailed",\n'
+        '  "negative_prompt": "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, jpeg artifacts, signature, watermark, username, blurry",\n'
+        '  "steps": 28,\n'
+        '  "cfg_scale": 7.0,\n'
+        '  "sampler_name": "Euler a"\n'
+        "}\n"
         f"Follow this JSON schema exactly: {schema_hint}"
     )
 
@@ -210,11 +225,16 @@ async def get_prompt_from_llm(user_text: str) -> dict:
         "model": LLM_MODEL,
         "messages": [
             {"role": "system", "content": system_instruction},
-            {"role": "user", "content": user_text},
+            {"role": "user", "content": f"Convert to tags: {user_text}"},  # Триггер!
         ],
         "stream": False,
-        "format": LLM_RESPONSE_SCHEMA,
+        "format": LLM_RESPONSE_SCHEMA,  # Если используешь structured outputs в свежей Ollama
         "keep_alive": "5m",
+        "options": {
+            "temperature": 0.8,  # Делает выбор тегов богаче
+            "top_p": 0.9,
+            "num_ctx": 4096,  # Даем больше контекста для объемных ответов
+        },
     }
 
     async with httpx.AsyncClient(timeout=_get_llm_timeout()) as client:
@@ -229,7 +249,9 @@ async def get_prompt_from_llm(user_text: str) -> dict:
             ).strip()
 
             if not raw_response:
-                logger.error("LLM returned empty content: %s", _preview_text(response_payload))
+                logger.error(
+                    "LLM returned empty content: %s", _preview_text(response_payload)
+                )
                 return _build_error(
                     "llm",
                     "LLM returned an empty response body.",
@@ -278,7 +300,9 @@ async def get_prompt_from_llm(user_text: str) -> dict:
                 prompt = _build_prompt_fallback(parsed, user_text)
 
             if not prompt:
-                logger.error("LLM response is missing a usable prompt: %s", raw_response)
+                logger.error(
+                    "LLM response is missing a usable prompt: %s", raw_response
+                )
                 return _build_error(
                     "llm_validation",
                     "LLM response is missing a non-empty prompt.",
@@ -289,22 +313,31 @@ async def get_prompt_from_llm(user_text: str) -> dict:
                     parsed_keys=sorted(parsed.keys()),
                 )
             elif prompt == user_text.strip():
-                logger.warning("LLM prompt fallback used original user text: %s", raw_response)
+                logger.warning(
+                    "LLM prompt fallback used original user text: %s", raw_response
+                )
             elif prompt.startswith(f"{user_text.strip()},"):
-                logger.warning("LLM prompt fallback combined original text with partial structured fields: %s", raw_response)
+                logger.warning(
+                    "LLM prompt fallback combined original text with partial structured fields: %s",
+                    raw_response,
+                )
 
             negative_prompt = _stringify_prompt_value(parsed.get("negative_prompt"))
             if not negative_prompt:
                 negative_prompt = _stringify_prompt_value(parsed.get("negative"))
             if not negative_prompt:
-                negative_prompt = "blurry, low quality, distorted, deformed, bad anatomy"
+                negative_prompt = (
+                    "blurry, low quality, distorted, deformed, bad anatomy"
+                )
 
             return {
                 "prompt": prompt,
                 "negative_prompt": negative_prompt,
                 "steps": int(parsed.get("steps", 28)),
                 "cfg_scale": float(parsed.get("cfg_scale", 7.0)),
-                "sampler_name": str(parsed.get("sampler_name") or parsed.get("sampler") or "Euler a"),
+                "sampler_name": str(
+                    parsed.get("sampler_name") or parsed.get("sampler") or "Euler a"
+                ),
             }
         except httpx.TimeoutException as exc:
             logger.exception("LLM request timed out")
