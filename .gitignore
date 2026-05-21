@@ -201,6 +201,11 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
+# Project-generated assets and local documents
+images/
+*.docx
+~$*.docx
+
 # Marimo
 marimo/_static/
 marimo/_lsp/
