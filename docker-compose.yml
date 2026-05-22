@@ -1,0 +1,41 @@
+services:
+  app:
+    build: .
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --app-dir Main/app
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: sqlite+aiosqlite:///./data/database.db
+      LLM_API_URL: http://llm:11434/api/chat
+      LLM_GENERATE_URL: http://llm:11434/api/generate
+      FORGE_API_URL: http://forge:7860/sdapi/v1/txt2img
+      LLM_MODEL: prompter
+      LLM_REQUEST_MODE: raw_generate
+      LLM_KEEP_ALIVE: "0"
+    volumes:
+      - ./images:/app/images
+      - ./data:/app/data
+    depends_on:
+      - llm
+      - forge
+
+  llm:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+
+  forge:
+    image: ghcr.io/ai-dock/stable-diffusion-webui-forge:latest-cuda
+    environment:
+      WEB_ENABLE_AUTH: "false"
+      CF_QUICK_TUNNELS: "false"
+      FORGE_ARGS: --api --listen
+    ports:
+      - "7860:7860"
+    volumes:
+      - ./forge-workspace:/workspace
+
+volumes:
+  ollama:
