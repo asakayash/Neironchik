@@ -203,6 +203,8 @@ cython_debug/
 
 # Project-generated assets and local documents
 images/
+data/
+forge-workspace/
 database.db
 *.docx
 ~$*.docx
